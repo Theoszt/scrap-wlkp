@@ -12,4 +12,13 @@ for f, mode in files:
     if mode == "python":
         subprocess.run(["python", f], check=True)
     elif mode == "streamlit":
-        subprocess.run(["python", "-m", "streamlit", "run", f], check=True)
+        proc = subprocess.Popen(["python", "-m", "streamlit", "run", f])
+        print("🚀 Streamlit jalan. Tunggu sampai user selesai...")
+
+        import time, os
+        while not os.path.exists("done.flag"):
+            time.sleep(2)
+
+        print("✅ Step2 selesai")
+        proc.terminate()
+        proc.wait()
