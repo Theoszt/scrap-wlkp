@@ -6,6 +6,7 @@ import pandas as pd
 import glob
 import zipfile
 from io import BytesIO
+import uuid
 
 # =========================
 # Konfigurasi API
@@ -101,34 +102,64 @@ if st.session_state.step == 1.5:
             st.warning("❌ Tidak ditemukan")
             continue
 
+        # Jika hanya ada 1 hasil → auto pilih
         if len(companies) == 1:
             c = companies[0]
-            st.session_state.selected_companies[name] = c["id"]
+            branch_name = c.get("companyable", {}).get("branch_name", "-")
+            address = c.get("address", "-")
+
+            st.session_state.selected_companies[name] = {
+                "id": c["id"],
+                "branch_name": branch_name,
+                "address": address
+            }
 
             with st.expander(c.get("name", "-"), expanded=True):
                 st.markdown(f"**ID:** {c.get('id', '-')}")
-                st.markdown(f"**Alamat:** {c.get('address', '-')}")
+                st.markdown(f"**Cabang (branch_name):** {branch_name}")
+                st.markdown(f"**Alamat:** {address}")
                 st.markdown(f"**NIB:** {c.get('nib', '-')}")
                 st.success("✅ Dipilih otomatis")
 
+        # Jika lebih dari 1 hasil → kasih pilihan
         else:
-            for c in companies:
+            for idx, c in enumerate(companies):
+                branch_name = c.get("companyable", {}).get("branch_name", "-")
+                address = c.get("address", "-")
+                unique_key = f"{c['id']}_{branch_name}_{address}_{idx}"
+
                 with st.expander(c.get("name", "-")):
                     col1, col2 = st.columns([3, 1])
 
                     with col1:
                         st.markdown(f"**ID:** {c.get('id', '-')}")
-                        st.markdown(f"**Alamat:** {c.get('address', '-')}")
+                        st.markdown(f"**Cabang (branch_name):** {branch_name}")
+                        st.markdown(f"**Alamat:** {address}")
                         st.markdown(f"**NIB:** {c.get('nib', '-')}")
 
                     with col2:
-                        if st.button(f"Pilih", key=f"pilih_{c['id']}"):
-                            st.session_state.selected_companies[name] = c["id"]
-                            st.success(f"✅ {c.get('name')} dipilih")
+                        if st.button("Pilih", key=f"pilih_{unique_key}"):
+                            st.session_state.selected_companies[name] = {
+                                "id": c["id"],
+                                "branch_name": branch_name,
+                                "address": address
+                            }
+                            st.rerun()  # rerun supaya langsung update UI
 
-    if st.button("Lanjut ke Step 2"):
-        st.session_state.step = 2
-        st.rerun()
+                # ✅ tampilkan sukses kalau perusahaan ini sudah dipilih
+                if (
+                    name in st.session_state.selected_companies
+                    and st.session_state.selected_companies[name]["id"] == c["id"]
+                ):
+                    st.success(f"✅ {c.get('name')} - {branch_name} dipilih")
+
+    # 🔽 Tombol lanjut ke step 2
+    if st.session_state.selected_companies:
+        st.markdown("---")
+        if st.button("➡️ Lanjut ke Step 2 (Ambil Data Pekerja)"):
+            st.session_state.step = 2
+            st.rerun()
+
 
 # =========================
 # STEP 2: Ambil Data Pekerja
@@ -140,8 +171,9 @@ if st.session_state.step == 2:
         for f in glob.glob("*.json"):
             os.remove(f)
 
-        for nama, cid in st.session_state.selected_companies.items():
-            base_url = f"{BASE_URL}/{cid}/employees"
+        for nama, company in st.session_state.selected_companies.items():
+            company_id = company["id"]  # ambil ID dari dict
+            base_url = f"{BASE_URL}/{company_id}/employees"
             page = 1
             employees = []
 
@@ -163,6 +195,7 @@ if st.session_state.step == 2:
 
         st.session_state.step = 3
         st.rerun()
+
 
 # =========================
 # STEP 3: Proses ke Excel
@@ -193,7 +226,7 @@ elif st.session_state.step == 3:
                 "#": str(i),
                 "BADAN HUKUM": "-",
                 "NAMA PERUSAHAAN": nama,
-                "NO. KTP (NIK)": str(emp.get("employable", {}).get("id_number")),
+                "NO. KTP (NIK)": str((emp.get("employable") or {}).get("id_number", "")),
                 "NAMA PEGAWAI": str(emp.get("name")),
                 "JENIS KELAMIN": gender_map.get(emp.get("gender"), "Tidak Diketahui"),
                 "STATUS PERNIKAHAN": "-",
